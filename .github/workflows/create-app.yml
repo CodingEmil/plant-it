@@ -1,0 +1,55 @@
+on:
+  workflow_dispatch:
+    inputs:
+      sign:
+        description: 'Sign the created APK'
+        type: boolean
+
+jobs:
+  create_apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Move to project directory
+        run: mv $GITHUB_WORKSPACE /Users/runner/com.github.mdeluise.plantit
+        if: $GITHUB_WORKSPACE != '/Users/runner/com.github.mdeluise.plantit'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          flutter-version: ${{ env.FLUTTER_VERSION }}
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Create apk File
+        run: flutter pub get && flutter build apk --release
+        working-directory: ./frontend
+
+      - name: Decode keystore
+        if: inputs.sign == true
+        run: echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 --decode > keystore.jks
+        working-directory: ./frontend
+
+      - name: Sign apk File
+        if: inputs.sign == true
+        run: |
+          echo ${{ secrets.KEYSTORE_PASSWORD }} | \
+            apksigner sign --ks-key-alias ${{ secrets.KEYSTORE_KEY_ALIAS }} \
+            --ks keystore.jks build/app/outputs/flutter-apk/app-release.apk
+        working-directory: ./frontend
+
+      - name: Verify the APK
+        if: inputs.sign == true
+        run: apksigner verify --print-certs --verbose build/app/outputs/flutter-apk/app-release.apk
+        working-directory: ./frontend
+      
+      - name: Save apk File
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-apk
+          retention-days: 1
+          path: /Users/runner/com.github.mdeluise.plantit/frontend/build/app/outputs/flutter-apk/app-release.apk
